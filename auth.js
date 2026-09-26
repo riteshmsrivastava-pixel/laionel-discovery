@@ -24,6 +24,11 @@
   #laiGate a{color:#0E7C70;cursor:pointer}
   #laiOut{all:unset;cursor:pointer;color:#9FB8B3;font-size:12px;text-decoration:underline}`;
 
+  function allowed(s){
+    const list = (cfg.allowedEmails || []).map(e => e.toLowerCase());
+    return !list.length || list.includes((s.user.email || "").toLowerCase());
+  }
+
   function gate(){
     const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
     const g = document.createElement("div"); g.id = "laiGate";
@@ -57,6 +62,7 @@
       });
       btn.disabled = false;
       if(error){ err.textContent = error.message === "Invalid login credentials" ? "Email or password is wrong." : error.message; return; }
+      if(!allowed(data.session)){ await sb.auth.signOut(); err.textContent = "This account does not have access to LAIONEL Discovery."; return; }
       session = data.session; g.remove(); readyResolve(true);
     };
   }
@@ -127,7 +133,8 @@
     if(configured){
       sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
       const { data } = await sb.auth.getSession();
-      if(data.session){ session = data.session; readyResolve(true); return; }
+      if(data.session && !allowed(data.session)) await sb.auth.signOut();
+      else if(data.session){ session = data.session; readyResolve(true); return; }
     }
     gate();
   }

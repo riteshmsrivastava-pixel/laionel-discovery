@@ -10,11 +10,14 @@ create table if not exists discovery_docs (
 
 alter table discovery_docs enable row level security;
 
--- Only signed-in users (Ritesh and Monica) can read or write. Nothing is public.
+-- Only Ritesh and Monica can read or write. The Supabase project is shared with
+-- other apps, so being signed in is not enough: the email must be on this list.
 drop policy if exists "team read"  on discovery_docs;
 drop policy if exists "team write" on discovery_docs;
-create policy "team read"  on discovery_docs for select to authenticated using (true);
-create policy "team write" on discovery_docs for all    to authenticated using (true) with check (true);
+drop policy if exists "team only"  on discovery_docs;
+create policy "team only" on discovery_docs for all to authenticated
+  using      (lower(auth.jwt() ->> 'email') in ('ritesh.m.srivastava@gmail.com', 'monica31@mit.edu'))
+  with check (lower(auth.jwt() ->> 'email') in ('ritesh.m.srivastava@gmail.com', 'monica31@mit.edu'));
 
 -- Live updates between the two of you.
 alter table discovery_docs replica identity full;
