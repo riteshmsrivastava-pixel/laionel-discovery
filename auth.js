@@ -9,9 +9,9 @@
   const ready = new Promise(r => readyResolve = r);
 
   const css = `
-  #laiGate{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:#052E2B;padding:16px;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif}
+  #laiGate{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:#052E2B;padding:16px;font-family:Arial,Helvetica,sans-serif}
   #laiGate .laibox{width:100%;max-width:360px;background:#F6F7F4;border-radius:14px;padding:32px 28px;box-shadow:0 24px 60px rgba(0,0,0,.35);color:#052E2B}
-  #laiGate .laiwm{font-weight:900;font-size:26px;letter-spacing:.02em;margin:0 0 4px}
+  #laiGate .laiwm{display:block;width:190px;height:auto;margin:0 0 14px}
   #laiGate .laiwm b{color:#0E7C70}
   #laiGate .laisub{font-size:13px;color:#3E5451;margin:0 0 24px}
   #laiGate label{display:block;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#3E5451;margin:14px 0 6px}
@@ -34,15 +34,15 @@
     const g = document.createElement("div"); g.id = "laiGate";
     g.innerHTML = configured ? `
       <form class="laibox" id="laiForm">
-        <p class="laiwm"><b>LAI</b>ONEL</p>
-        <p class="laisub">Discovery workspace. Ritesh and Monica only.</p>
+        <img class="laiwm" src="assets/laionel-wordmark-evergreen-turquoise.svg" alt="LAIONEL" width="190" height="33">
+        <p class="laisub">Discovery workspace for our MIT Sloan research study. Ritesh and Monica only.</p>
         <label for="laiEmail">Email</label><input id="laiEmail" type="email" autocomplete="username" required>
         <label for="laiPass">Password</label><input id="laiPass" type="password" autocomplete="current-password" required>
         <button id="laiGo" type="submit">Sign in</button>
         <div class="laierr" id="laiErr"></div>
       </form>` : `
       <div class="laibox">
-        <p class="laiwm"><b>LAI</b>ONEL</p>
+        <img class="laiwm" src="assets/laionel-wordmark-evergreen-turquoise.svg" alt="LAIONEL" width="190" height="33">
         <p class="laisub">Shared sign-in is not connected yet.</p>
         <p class="lainote">Add the Supabase URL and anon key to <code>config.js</code> to turn on sign-in and shared data. Until then you can work in this browser only.</p>
         <button id="laiLocal" type="button">Continue in this browser</button>
@@ -74,7 +74,8 @@
     if(seeding) return seeding;
     seeding = (async () => {
       const { count, error } = await sb.from(TABLE).select("id", { count: "exact", head: true });
-      if(error || count > 0 || typeof buildSeed !== "function") return;
+      if(error || typeof buildSeed !== "function") return;
+      if(count > 0) return migrate();
       const seed = buildSeed(), rows = [], now = new Date().toISOString();
       Object.keys(seed).forEach(col => Object.keys(seed[col]).forEach(id =>
         rows.push({ col, id, data: Object.assign({}, seed[col][id], { updatedAt: now }) })));
@@ -82,6 +83,27 @@
     })();
     return seeding;
   }
+  /* One-time content refresh for data seeded before the research reframe (v2).
+     Replaces the starter questions and week plan text, keeps tick marks and anything added by hand. */
+  const OLD_NOTES = {
+    "Very mature org; treat as reference view, not buyer": 1,
+    "Mastercard is a Credo AI customer; ask what it does and does not do": 1,
+    "Second ring; Ritesh's Novartis background helps": 1
+  };
+  async function migrate(){
+    const { data: rows, error } = await sb.from(TABLE).select("col,id,data").in("col", ["settings", "questions", "weekplan", "people"]);
+    if(error) return;
+    const main = rows.find(r => r.col === "settings" && r.id === "main");
+    if(main && (main.data.seedVersion || 1) >= 2) return;
+    const seed = buildSeed(), now = new Date().toISOString(), out = [];
+    const have = {}; rows.forEach(r => have[r.col + ":" + r.id] = r.data);
+    Object.entries(seed.questions).forEach(([id, q]) => { if(have["questions:" + id]) out.push({ col: "questions", id, data: Object.assign({}, have["questions:" + id], { text: q.text, guidance: q.guidance, section: q.section, updatedAt: now }) }); });
+    Object.entries(seed.weekplan).forEach(([id, w]) => { const cur = have["weekplan:" + id]; if(cur) out.push({ col: "weekplan", id, data: Object.assign({}, cur, { task: w.task, hyp: w.hyp, updatedAt: now }) }); });
+    Object.entries(seed.people).forEach(([id, p]) => { const cur = have["people:" + id]; if(cur && OLD_NOTES[cur.notes]) out.push({ col: "people", id, data: Object.assign({}, cur, { notes: p.notes, updatedAt: now }) }); });
+    out.push({ col: "settings", id: "main", data: Object.assign({}, main ? main.data : seed.settings.main, { seedVersion: 2, updatedAt: now }) });
+    await sb.from(TABLE).upsert(out);
+  }
+
   const db = {
     collection(col){
       return {
